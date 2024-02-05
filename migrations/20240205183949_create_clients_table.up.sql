@@ -1,8 +1,9 @@
 CREATE TABLE clients
 (
-    id     integer primary key generated always as identity,
+    id     integer primary key generated always as identity not null,
     nome   varchar(50) not null,
-    limite integer     not null
+    limite integer     not null,
+    saldo integer not null default 0
 );
 
 CREATE INDEX id_index ON clients (id);
