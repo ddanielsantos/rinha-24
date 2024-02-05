@@ -27,5 +27,7 @@ async fn main() {
         .await
         .unwrap();
 
+    println!("server available at {}", &config.address);
+
     axum::serve(tcp_listener, api).await.unwrap();
 }
