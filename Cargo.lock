@@ -1043,6 +1043,7 @@ name = "rinha-24"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "dotenvy",
  "serde",
  "sqlx",
  "tokio",

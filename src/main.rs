@@ -1,4 +1,5 @@
 use tokio::net::TcpListener;
+use crate::config::Config;
 use crate::state::AppState;
 
 mod state;
@@ -9,15 +10,20 @@ mod db;
 
 #[tokio::main]
 async fn main() {
-    let pool = db::create_connection_pool().await;
+    let config = Config::default();
+    let pool = db::create_connection_pool(&config.database_url).await;
 
-    sqlx::migrate!().run(&pool).await.expect("Failed to migrate database");
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .expect("Failed to migrate database");
+
     let state = AppState::new(pool);
 
     let api = api::routes()
         .with_state(state);
 
-    let tcp_listener = TcpListener::bind("0.0.0.0:3000")
+    let tcp_listener = TcpListener::bind(&config.address)
         .await
         .unwrap();
 
