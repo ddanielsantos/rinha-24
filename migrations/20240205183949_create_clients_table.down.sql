@@ -1,1 +1,2 @@
+DROP INDEX IF EXISTS id_index;
 DROP TABLE IF EXISTS clients;

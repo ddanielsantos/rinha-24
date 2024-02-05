@@ -5,6 +5,8 @@ CREATE TABLE clients
     limite integer     not null
 );
 
+CREATE INDEX id_index ON clients (id);
+
 DO
 $$
     BEGIN
