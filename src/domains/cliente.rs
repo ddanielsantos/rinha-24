@@ -4,6 +4,8 @@ use axum::{Json, Router};
 use axum::http::StatusCode;
 use axum::extract::Path;
 use axum::routing::{get, post};
+use sqlx::Error;
+use time::OffsetDateTime;
 use crate::state::AppState;
 
 #[derive(Debug, serde::Serialize)]
@@ -81,6 +83,7 @@ async fn transactions_handler(
 #[derive(serde::Serialize)]
 struct SaldoExtract {
      total: i32,
+     limite: i32,
      data_extrato: String
 }
 
@@ -89,7 +92,7 @@ struct Transaction {
      valor: i32,
      tipo: String,
      descricao: String,
-     realizada_em: String
+     realizada_em: OffsetDateTime
 }
 
 #[derive(serde::Serialize)]
@@ -111,7 +114,29 @@ async fn extract_handler(
                StatusCode::NOT_FOUND.into_response()
           }
           Ok(c) => {
-               todo!()
+               let saldo = SaldoExtract {
+                    data_extrato: "agora".to_string(),
+                    total: c.saldo,
+                    limite: c.limite
+               };
+
+               let txs = sqlx::query_as!(Transaction, "select valor, tipo, descricao, realizada_em from transactions where client_id = $1 order by realizada_em desc limit 10", id)
+                   .fetch_all(&state.db)
+                   .await;
+
+               match txs {
+                    Ok(txs) => {
+                         let res = ExtractResponse {
+                              saldo,
+                              ultimas_transacoes: txs,
+                         };
+
+                         Json(res).into_response()
+                    }
+                    Err(_) => {
+                         todo!()
+                    }
+               }
           }
      }
 }
