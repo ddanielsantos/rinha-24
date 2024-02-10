@@ -78,10 +78,29 @@ async fn transactions_handler(
      }
 }
 
+#[derive(serde::Serialize)]
+struct SaldoExtract {
+     total: i32,
+     data_extrato: String
+}
+
+#[derive(serde::Serialize)]
+struct Transaction {
+     valor: i32,
+     tipo: String,
+     descricao: String,
+     realizada_em: String
+}
+
+#[derive(serde::Serialize)]
+struct ExtractResponse {
+     saldo: SaldoExtract,
+     ultimas_transacoes: Vec<Transaction>
+}
+
 async fn extract_handler(
      Path(id): Path<i32>,
      State(state): State<AppState>,
-     Json(body): Json<TransactionRequest>,
 ) -> impl IntoResponse {
      let client = sqlx::query_as!(Client, "select * from clients c where c.id = $1", id)
          .fetch_one(&state.db)
