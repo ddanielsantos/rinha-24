@@ -11,4 +11,5 @@ axum = "0.7.4"
 sqlx = { version = "0.7.3", features = ["runtime-tokio", "postgres", "macros", "time"]}
 serde = { version = "1.0.195", features = ["derive"] }
 dotenvy = "0.15.7"
-time = { version = "0.3.34", features = ["serde"] }
+time = { version = "0.3.34", features = ["serde", "formatting"] }
+serde_with = { version = "3.6.1", features = ["time_0_3"]}

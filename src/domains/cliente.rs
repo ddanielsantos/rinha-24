@@ -6,6 +6,7 @@ use axum::extract::Path;
 use axum::routing::{get, post};
 use sqlx::Error;
 use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
 use crate::state::AppState;
 
 #[derive(Debug, serde::Serialize)]
@@ -18,9 +19,12 @@ pub struct Client {
 
 #[derive(serde::Deserialize)]
 struct TransactionRequest {
-     valor: i32,
-     tipo: String,
-     descricao: String
+     #[serde(rename = "valor")]
+     value: i32,
+     #[serde(rename = "tipo")]
+     r#type: String,
+     #[serde(rename = "descricao")]
+     description: String
 }
 
 #[derive(serde::Serialize)]
@@ -45,11 +49,15 @@ async fn transactions_handler(
                StatusCode::NOT_FOUND.into_response()
           }
           Ok(c) => {
-               match body.tipo.as_str() {
+               match body.r#type.as_str() {
                     "c" => {
-                         let balance = c.balance + body.valor;
+                         let balance = c.balance + body.value;
 
                          let _ = sqlx::query!("update clients set balance = $1 where id = $2", balance, id)
+                             .execute(&state.db)
+                             .await;
+
+                         let _ = sqlx::query!("insert into transactions (client_id, value, type, description, created_at) values ($1, $2, $3, $4, now())", c.id, body.value, body.r#type, body.description)
                              .execute(&state.db)
                              .await;
 
@@ -59,13 +67,17 @@ async fn transactions_handler(
                          }).into_response()
                     }
                     "d" => {
-                         let new_balance = c.balance - body.valor;
+                         let new_balance = c.balance - body.value;
 
                          if new_balance < (c.credit_limit * -1) {
                               return StatusCode::UNPROCESSABLE_ENTITY.into_response()
                          }
 
                          let _ = sqlx::query!("update clients set balance = $1 where id = $2", new_balance, id)
+                             .execute(&state.db)
+                             .await;
+
+                         let _ = sqlx::query!("insert into transactions (client_id, value, type, description, created_at) values ($1, $2, $3, $4, now())", c.id, body.value, body.r#type, body.description)
                              .execute(&state.db)
                              .await;
 
@@ -82,26 +94,35 @@ async fn transactions_handler(
      }
 }
 
+#[serde_with::serde_as]
 #[derive(serde::Serialize)]
-struct SaldoExtract {
+struct BalanceExtract {
      total: i32,
      #[serde(rename = "limite")]
      limit: i32,
-     data_extrato: String
+     #[serde_as(as = "Rfc3339")]
+     #[serde(rename = "data_extrato")]
+     queryed_at: OffsetDateTime
 }
 
+#[serde_with::serde_as]
 #[derive(serde::Serialize)]
 struct Transaction {
+     #[serde(rename = "valor")]
      value: i32,
+     #[serde(rename = "tipo")]
      r#type: String,
+     #[serde(rename = "descricao")]
      description: String,
+     #[serde_as(as = "Rfc3339")]
+     #[serde(rename = "realizada_em")]
      created_at: OffsetDateTime
 }
 
 #[derive(serde::Serialize)]
 struct ExtractResponse {
      #[serde(rename = "saldo")]
-     balance: SaldoExtract,
+     balance: BalanceExtract,
      #[serde(rename = "ultimas_transacoes")]
      last_transactions: Vec<Transaction>
 }
@@ -119,8 +140,8 @@ async fn extract_handler(
                StatusCode::NOT_FOUND.into_response()
           }
           Ok(c) => {
-               let balance = SaldoExtract {
-                    data_extrato: "agora".to_string(),
+               let balance = BalanceExtract {
+                    queryed_at: OffsetDateTime::now_utc(),
                     total: c.balance,
                     limit: c.credit_limit
                };
