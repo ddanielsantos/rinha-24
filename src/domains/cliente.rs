@@ -78,7 +78,24 @@ async fn transactions_handler(
      }
 }
 
-async fn extract_handler() -> impl IntoResponse {}
+async fn extract_handler(
+     Path(id): Path<i32>,
+     State(state): State<AppState>,
+     Json(body): Json<TransactionRequest>,
+) -> impl IntoResponse {
+     let client = sqlx::query_as!(Client, "select * from clients c where c.id = $1", id)
+         .fetch_one(&state.db)
+         .await;
+
+     match client {
+          Err(_) => {
+               StatusCode::NOT_FOUND.into_response()
+          }
+          Ok(c) => {
+               todo!()
+          }
+     }
+}
 
 pub fn client_routes() -> Router<AppState> {
      Router::new()
