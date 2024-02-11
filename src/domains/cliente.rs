@@ -10,11 +10,11 @@ use time::format_description::well_known::Rfc3339;
 use crate::state::AppState;
 
 #[derive(Debug, serde::Serialize)]
-pub struct Client {
-     pub id: i32,
-     pub name: String,
-     pub credit_limit: i32,
-     pub balance: i32,
+struct Client {
+     id: i32,
+     name: String,
+     credit_limit: i32,
+     balance: i32,
 }
 
 #[derive(serde::Deserialize)]
