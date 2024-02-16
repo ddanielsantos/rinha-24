@@ -51,15 +51,12 @@ async fn transactions_handler(
           Ok(c) => {
                match body.r#type.as_str() {
                     "c" => {
-                         let balance = c.balance + body.value;
-
-                         let _ = sqlx::query!("update clients set balance = $1 where id = $2", balance, id)
-                             .execute(&state.db)
-                             .await;
-
-                         let _ = sqlx::query!("insert into transactions (client_id, value, type, description, created_at) values ($1, $2, $3, $4, now())", c.id, body.value, body.r#type, body.description)
-                             .execute(&state.db)
-                             .await;
+                         let balance = sqlx::query!("select new_balance from alter_balance($1, $2, $3, $4)", c.id, body.value, body.r#type, body.description)
+                             .fetch_one(&state.db)
+                             .await
+                             .expect("handle error idk just unwrap this thing")
+                             .new_balance
+                             .expect("unwrapping again ?");
 
                          Json(TransactionResponse {
                               limit: c.credit_limit,
