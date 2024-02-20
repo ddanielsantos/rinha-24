@@ -44,6 +44,10 @@ async fn transactions_handler(
          .fetch_one(&state.db)
          .await;
 
+     if body.description.len() > 10 {
+          return StatusCode::UNPROCESSABLE_ENTITY.into_response();
+     }
+
      match client {
           Err(_) => {
                StatusCode::NOT_FOUND.into_response()
@@ -64,27 +68,24 @@ async fn transactions_handler(
                          }).into_response()
                     }
                     "d" => {
-                         let new_balance = c.balance - body.value;
+                         let balance = sqlx::query!("select * from alter_balance($1, $2, $3, $4)", c.id, body.value, body.r#type, body.description)
+                             .fetch_one(&state.db)
+                             .await
+                             .expect("handle error idk just unwrap this thing");
 
-                         if new_balance < (c.credit_limit * -1) {
-                              return StatusCode::UNPROCESSABLE_ENTITY.into_response()
+                         if balance.success == Some(-2) {
+                              return StatusCode::UNPROCESSABLE_ENTITY.into_response();
                          }
 
-                         let _ = sqlx::query!("update clients set balance = $1 where id = $2", new_balance, id)
-                             .execute(&state.db)
-                             .await;
-
-                         let _ = sqlx::query!("insert into transactions (client_id, value, type, description, created_at) values ($1, $2, $3, $4, now())", c.id, body.value, body.r#type, body.description)
-                             .execute(&state.db)
-                             .await;
+                         let balance = balance.new_balance.unwrap();
 
                          Json(TransactionResponse {
                               limit: c.credit_limit,
-                              balance: new_balance
+                              balance
                          }).into_response()
                     }
                     _ => {
-                         StatusCode::BAD_REQUEST.into_response()
+                         StatusCode::UNPROCESSABLE_ENTITY.into_response()
                     }
                }
           }
