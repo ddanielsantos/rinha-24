@@ -44,7 +44,7 @@ async fn transactions_handler(
          .fetch_one(&state.db)
          .await;
 
-     if body.description.len() > 10 {
+     if body.description.len() > 10 || body.description.len() < 1 {
           return StatusCode::UNPROCESSABLE_ENTITY.into_response();
      }
 
