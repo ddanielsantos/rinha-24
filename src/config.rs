@@ -1,5 +1,4 @@
 use std::net::Ipv4Addr;
-use dotenvy;
 
 pub struct Config {
     pub database_url: String,
@@ -13,7 +12,7 @@ impl Config {
 
         Config {
             database_url: dotenvy::var("DATABASE_URL").expect("DATABASE_URL must be set"),
-            address: format!("{}:{}", address, port)
+            address: format!("{}:{}", address, port),
         }
     }
 }

@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into transactions (client_id, value, type, description, created_at) values ($1, $2, $3, $4, now())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int4",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2ea24f9a9ac2700624b54927719d053f1c043726c7444d714a3b42761d819f8e"
+}

@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select balance, credit_limit from clients where id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "balance",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "credit_limit",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "203525c20e47cd8aa779b3e8d309a5ccf617904b2087022edea5457dfc739d2c"
+}

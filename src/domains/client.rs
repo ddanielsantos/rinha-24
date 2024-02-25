@@ -1,172 +1,185 @@
-use axum::extract::State;
-use axum::response::IntoResponse;
-use axum::{Json, Router};
-use axum::http::StatusCode;
-use axum::extract::Path;
-use axum::routing::{get, post};
-use sqlx::Error;
-use time::OffsetDateTime;
-use time::format_description::well_known::Rfc3339;
 use crate::state::AppState;
+use anyhow::bail;
+use axum::extract::Path;
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
+use axum::routing::{get, post};
+use axum::Router;
+use time::format_description::well_known::Rfc3339;
+use time::OffsetDateTime;
 
 #[derive(Debug, serde::Serialize)]
 struct Client {
-     id: i32,
-     name: String,
-     credit_limit: i32,
-     balance: i32,
+    id: i32,
+    name: String,
+    credit_limit: i32,
+    balance: i32,
 }
 
 #[derive(serde::Deserialize)]
 struct TransactionRequest {
-     #[serde(rename = "valor")]
-     value: i32,
-     #[serde(rename = "tipo")]
-     r#type: String,
-     #[serde(rename = "descricao")]
-     description: String
+    #[serde(rename = "valor")]
+    value: i32,
+    #[serde(rename = "tipo")]
+    r#type: String,
+    #[serde(rename = "descricao")]
+    description: String,
 }
 
 #[derive(serde::Serialize)]
 struct TransactionResponse {
-     #[serde(rename = "limite")]
-     limit: i32,
-     #[serde(rename = "saldo")]
-     balance: i32,
+    #[serde(rename = "limite")]
+    limit: i32,
+    #[serde(rename = "saldo")]
+    balance: i32,
 }
 
 async fn transactions_handler(
-     Path(id): Path<i32>,
-     State(state): State<AppState>,
-     Json(body): Json<TransactionRequest>,
+    Path(id): Path<i32>,
+    State(state): State<AppState>,
+    axum::Json(body): axum::Json<TransactionRequest>,
 ) -> impl IntoResponse {
-     let client = sqlx::query_as!(Client, "select * from clients c where c.id = $1", id)
-         .fetch_one(&state.db)
-         .await;
+    if !(1..=5).contains(&id) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
 
-     if body.description.len() > 10 || body.description.len() < 1 {
-          return StatusCode::UNPROCESSABLE_ENTITY.into_response();
-     }
+    if body.description.len() > 10 || body.description.is_empty() {
+        return StatusCode::UNPROCESSABLE_ENTITY.into_response();
+    }
 
-     match client {
-          Err(_) => {
-               StatusCode::NOT_FOUND.into_response()
-          }
-          Ok(c) => {
-               match body.r#type.as_str() {
-                    "c" => {
-                         let balance = sqlx::query!("select new_balance from alter_balance($1, $2, $3, $4)", c.id, body.value, body.r#type, body.description)
-                             .fetch_one(&state.db)
-                             .await
-                             .expect("handle error idk just unwrap this thing")
-                             .new_balance
-                             .expect("unwrapping again ?");
+    let mut transaction = state.db.begin().await.unwrap();
 
-                         Json(TransactionResponse {
-                              limit: c.credit_limit,
-                              balance
-                         }).into_response()
-                    }
-                    "d" => {
-                         let balance = sqlx::query!("select * from alter_balance($1, $2, $3, $4)", c.id, body.value, body.r#type, body.description)
-                             .fetch_one(&state.db)
-                             .await
-                             .expect("handle error idk just unwrap this thing");
+    match body.r#type.as_str() {
+        "c" | "d" => {
+            let result = alter_balance(&body, &mut transaction, id).await;
 
-                         if balance.success == Some(-2) {
-                              return StatusCode::UNPROCESSABLE_ENTITY.into_response();
-                         }
+            match result {
+                Ok((credit_limit, new_balance)) => {
+                    transaction.commit().await.unwrap();
 
-                         let balance = balance.new_balance.unwrap();
+                    axum::Json(TransactionResponse {
+                        limit: credit_limit,
+                        balance: new_balance,
+                    })
+                    .into_response()
+                }
+                Err(_) => StatusCode::UNPROCESSABLE_ENTITY.into_response(),
+            }
+        }
+        _ => StatusCode::UNPROCESSABLE_ENTITY.into_response(),
+    }
+}
 
-                         Json(TransactionResponse {
-                              limit: c.credit_limit,
-                              balance
-                         }).into_response()
-                    }
-                    _ => {
-                         StatusCode::UNPROCESSABLE_ENTITY.into_response()
-                    }
-               }
-          }
-     }
+async fn alter_balance(
+    body: &TransactionRequest,
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    id: i32,
+) -> anyhow::Result<(i32, i32)> {
+    let cl = sqlx::query!(
+        r#"select balance, credit_limit from clients where id = $1"#,
+        id
+    )
+    .fetch_one(&mut **transaction)
+    .await?;
+
+    let mut new_balance = cl.balance;
+
+    if body.r#type == "d" {
+        new_balance += -body.value;
+
+        if new_balance < cl.credit_limit {
+            bail!("Balance cannot be lower than credit limit");
+        }
+    } else {
+        new_balance += body.value;
+    }
+
+    let _ = sqlx::query!(
+        "update clients set balance = $1 where id = $2",
+        new_balance,
+        id
+    )
+    .execute(&mut **transaction)
+    .await?;
+
+    let _ = sqlx::query!("insert into transactions (client_id, value, type, description, created_at) values ($1, $2, $3, $4, now())", id, body.value, body.r#type, body.description)
+    .execute(&mut **transaction)
+    .await?;
+
+    Ok((cl.credit_limit, new_balance))
 }
 
 #[serde_with::serde_as]
 #[derive(serde::Serialize)]
 struct BalanceExtract {
-     total: i32,
-     #[serde(rename = "limite")]
-     limit: i32,
-     #[serde_as(as = "Rfc3339")]
-     #[serde(rename = "data_extrato")]
-     queryed_at: OffsetDateTime
+    total: i32,
+    #[serde(rename = "limite")]
+    limit: i32,
+    #[serde_as(as = "Rfc3339")]
+    #[serde(rename = "data_extrato")]
+    queryed_at: OffsetDateTime,
 }
 
 #[serde_with::serde_as]
 #[derive(serde::Serialize)]
 struct Transaction {
-     #[serde(rename = "valor")]
-     value: i32,
-     #[serde(rename = "tipo")]
-     r#type: String,
-     #[serde(rename = "descricao")]
-     description: String,
-     #[serde_as(as = "Rfc3339")]
-     #[serde(rename = "realizada_em")]
-     created_at: OffsetDateTime
+    #[serde(rename = "valor")]
+    value: i32,
+    #[serde(rename = "tipo")]
+    r#type: String,
+    #[serde(rename = "descricao")]
+    description: String,
+    #[serde_as(as = "Rfc3339")]
+    #[serde(rename = "realizada_em")]
+    created_at: OffsetDateTime,
 }
 
 #[derive(serde::Serialize)]
 struct ExtractResponse {
-     #[serde(rename = "saldo")]
-     balance: BalanceExtract,
-     #[serde(rename = "ultimas_transacoes")]
-     last_transactions: Vec<Transaction>
+    #[serde(rename = "saldo")]
+    balance: BalanceExtract,
+    #[serde(rename = "ultimas_transacoes")]
+    last_transactions: Vec<Transaction>,
 }
 
-async fn extract_handler(
-     Path(id): Path<i32>,
-     State(state): State<AppState>,
-) -> impl IntoResponse {
-     let client = sqlx::query_as!(Client, "select * from clients c where c.id = $1", id)
-         .fetch_one(&state.db)
-         .await;
+async fn extract_handler(Path(id): Path<i32>, State(state): State<AppState>) -> impl IntoResponse {
+    if !(1..=5).contains(&id) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
 
-     match client {
-          Err(_) => {
-               StatusCode::NOT_FOUND.into_response()
-          }
-          Ok(c) => {
-               let balance = BalanceExtract {
-                    queryed_at: OffsetDateTime::now_utc(),
-                    total: c.balance,
-                    limit: c.credit_limit
-               };
+    let mut transaction = state.db.begin().await.unwrap();
 
-               let txs = sqlx::query_as!(Transaction, "select value, type, description, created_at from transactions where client_id = $1 order by created_at desc limit 10", id)
-                   .fetch_all(&state.db)
-                   .await;
+    let res = get_extract(id, &mut transaction).await;
 
-               match txs {
-                    Ok(txs) => {
-                         let res = ExtractResponse {
-                              balance,
-                              last_transactions: txs,
-                         };
+    transaction.commit().await.unwrap();
 
-                         Json(res).into_response()
-                    }
-                    Err(_) => {
-                         todo!()
-                    }
-               }
-          }
-     }
+    axum::Json(res).into_response()
+}
+
+/// todo: use join instead of this, but im too lazy to fight against sqlx
+async fn get_extract(
+    id: i32,
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+) -> ExtractResponse {
+    let balance = sqlx::query_as!(BalanceExtract, r#"select credit_limit as "limit", balance as "total", now() as "queryed_at!" from clients c where c.id = $1"#, id)
+        .fetch_one(&mut **transaction)
+        .await
+        .unwrap();
+
+    let last_transactions = sqlx::query_as!(Transaction, "select value, type, description, created_at from transactions where client_id = $1 order by created_at desc limit 10", id)
+         .fetch_all(&mut **transaction)
+         .await
+         .unwrap();
+
+    ExtractResponse {
+        balance,
+        last_transactions,
+    }
 }
 
 pub fn client_routes() -> Router<AppState> {
-     Router::new()
-         .route("/:id/transacoes", post(transactions_handler))
-         .route("/:id/extrato", get(extract_handler))
+    Router::new()
+        .route("/:id/transacoes", post(transactions_handler))
+        .route("/:id/extrato", get(extract_handler))
 }

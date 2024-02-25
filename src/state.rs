@@ -7,8 +7,6 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(db: Pool<Postgres>) -> Self {
-        AppState {
-            db
-        }
+        AppState { db }
     }
 }

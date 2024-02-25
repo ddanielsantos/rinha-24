@@ -1,12 +1,12 @@
-use tokio::net::TcpListener;
 use crate::config::Config;
 use crate::state::AppState;
+use tokio::net::TcpListener;
 
-mod state;
-mod domains;
 mod api;
 mod config;
 mod db;
+mod domains;
+mod state;
 
 #[tokio::main]
 async fn main() {
@@ -20,12 +20,9 @@ async fn main() {
 
     let state = AppState::new(pool);
 
-    let api = api::routes()
-        .with_state(state);
+    let api = api::routes().with_state(state);
 
-    let tcp_listener = TcpListener::bind(&config.address)
-        .await
-        .unwrap();
+    let tcp_listener = TcpListener::bind(&config.address).await.unwrap();
 
     println!("server available at {}", &config.address);
 
