@@ -48,10 +48,9 @@ async fn transactions_handler(
         return StatusCode::UNPROCESSABLE_ENTITY.into_response();
     }
 
-    let mut transaction = state.db.begin().await.unwrap();
-
     match body.r#type.as_str() {
         "c" | "d" => {
+            let mut transaction = state.db.begin().await.unwrap();
             let result = alter_balance(&body, &mut transaction, id).await;
 
             match result {
@@ -64,7 +63,10 @@ async fn transactions_handler(
                     })
                     .into_response()
                 }
-                Err(_) => StatusCode::UNPROCESSABLE_ENTITY.into_response(),
+                Err(_) => {
+                    transaction.rollback().await.unwrap();
+                    StatusCode::UNPROCESSABLE_ENTITY.into_response()
+                }
             }
         }
         _ => StatusCode::UNPROCESSABLE_ENTITY.into_response(),
@@ -86,9 +88,9 @@ async fn alter_balance(
     let mut new_balance = cl.balance;
 
     if body.r#type == "d" {
-        new_balance += -body.value;
+        new_balance -= body.value;
 
-        if new_balance < cl.credit_limit {
+        if new_balance < -cl.credit_limit {
             bail!("Balance cannot be lower than credit limit");
         }
     } else {
