@@ -78,6 +78,10 @@ async fn alter_balance(
     transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     id: i32,
 ) -> anyhow::Result<(i32, i32)> {
+    let _ = sqlx::query!("SELECT pg_advisory_xact_lock($1)", id as i64)
+        .execute(&mut **transaction)
+        .await?;
+
     let cl = sqlx::query!(
         r#"select balance, credit_limit from clients where id = $1"#,
         id
@@ -150,27 +154,20 @@ async fn extract_handler(Path(id): Path<i32>, State(state): State<AppState>) -> 
         return StatusCode::NOT_FOUND.into_response();
     }
 
-    let mut transaction = state.db.begin().await.unwrap();
-
-    let res = get_extract(id, &mut transaction).await;
-
-    transaction.commit().await.unwrap();
+    let res = get_extract(id, &state.db).await;
 
     axum::Json(res).into_response()
 }
 
 /// todo: use join instead of this, but im too lazy to fight against sqlx
-async fn get_extract(
-    id: i32,
-    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-) -> ExtractResponse {
+async fn get_extract(id: i32, pool: &sqlx::PgPool) -> ExtractResponse {
     let balance = sqlx::query_as!(BalanceExtract, r#"select credit_limit as "limit", balance as "total", now() as "queryed_at!" from clients c where c.id = $1"#, id)
-        .fetch_one(&mut **transaction)
+        .fetch_one(pool)
         .await
         .unwrap();
 
     let last_transactions = sqlx::query_as!(Transaction, "select value, type, description, created_at from transactions where client_id = $1 order by created_at desc limit 10", id)
-         .fetch_all(&mut **transaction)
+         .fetch_all(pool)
          .await
          .unwrap();
 
