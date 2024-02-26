@@ -4,7 +4,7 @@ services:
   api01: &api
     # Lembre-se de que seu serviço HTTP deve estar hospedado num repositório
     # publicamente acessível! Ex.: hub.docker.com
-    image: r-test
+    image: ddanielsantos/rinha-2024-q1
     hostname: api01
     environment:
       - DATABASE_URL=postgres://u_rinha_24:myawesomepass@db:5432/rinha_db
